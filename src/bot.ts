@@ -417,7 +417,7 @@ export function createBot(
         try {
           await ctx.api.editMessageTextInline(
             whisper.inlineMessageId,
-            `✅ @${whisper.recipientUsername} read the whisper.\n\n✨ Earn stars with us: @${botUsername}`,
+            `✅ @${whisper.recipientUsername} read the whisper.\n\n✨ Keep using our bot to earn stars`,
             { reply_markup: { inline_keyboard: [] } },
           );
         } catch (error) {
@@ -569,7 +569,7 @@ export function createBot(
       secret,
     });
     await ctx.reply(
-      "Your private draft is ready and expires in 15 minutes. Before posting, note that the configured admin receives a copy of the full whisper.",
+      "Your private draft is ready and expires in 15 minutes.",
       { reply_markup: new InlineKeyboard().switchInline("📤 Post whisper", `draft_${token}`) },
     );
     console.info("Private long-whisper draft prepared", {
