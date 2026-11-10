@@ -110,7 +110,6 @@ function whisperCardResult(
   id: string,
   recipientUsername: string,
   token: string,
-  botUsername: string,
 ) {
   return {
     type: "article" as const,
@@ -119,12 +118,12 @@ function whisperCardResult(
     description: "Private read. No one can know your secret whispers.",
     input_message_content: {
       message_text: [
-        "🔐 A private whisper is waiting.",
+        `🔐 A private whisper is waiting for @${recipientUsername}.`,
         "",
-        `Only the Telegram account with the username @${recipientUsername} can open it.`,
+        `Only @${recipientUsername} can read this whisper.`,
         "The secret disappears after it is read.",
         "",
-        `✨ Keep using our bot to earn stars`,
+        "✨ Earn with us!",
       ].join("\n"),
     },
     reply_markup: new InlineKeyboard().text("🔐 Read whisper privately", `read_${token}`),
@@ -749,7 +748,7 @@ export function createBot(
         return;
       }
       await ctx.answerInlineQuery(
-        [whisperCardResult(draft.id, draft.recipientUsername, token, botUsername)],
+        [whisperCardResult(draft.id, draft.recipientUsername, token)],
         { cache_time: 0, is_personal: true },
       );
       return;
@@ -816,7 +815,7 @@ export function createBot(
     });
 
     try {
-      const result = whisperCardResult(whisper.id, requestedUsername.toLowerCase(), token, botUsername);
+      const result = whisperCardResult(whisper.id, requestedUsername.toLowerCase(), token);
       await ctx.answerInlineQuery([result], { cache_time: 0, is_personal: true });
     } catch (error) {
       await removeWhisper(pool, whisper.id);
