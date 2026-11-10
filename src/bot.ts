@@ -124,7 +124,7 @@ function whisperCardResult(
         `Only the Telegram account with the username @${recipientUsername} can open it.`,
         "The secret disappears after it is read.",
         "",
-        `✨ Earn with us: @${botUsername}`,
+        `✨ Keep using our bot to earn stars`,
       ].join("\n"),
     },
     reply_markup: new InlineKeyboard().text("🔐 Read whisper privately", `read_${token}`),
