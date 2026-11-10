@@ -14,6 +14,7 @@ import {
   getEarnStatus,
   getWhisperDraft,
   getWhisperRevealFailure,
+  initializeUserOnStart,
   markBotStartNotificationSent,
   recordAdminCopy,
   registerUser,
@@ -59,6 +60,14 @@ test("authorization, expiration, rereads, and atomic consumption", { skip: !data
       new URL("../migrations/007_track_bot_starts.sql", import.meta.url),
       "utf8",
     );
+    const welcomeStarMigration = await readFile(
+      new URL("../migrations/008_welcome_star_award.sql", import.meta.url),
+      "utf8",
+    );
+    const whisperStarsMigration = await readFile(
+      new URL("../migrations/009_track_whisper_stars.sql", import.meta.url),
+      "utf8",
+    );
     await pool.query(initialMigration);
     await pool.query(recipientMigration);
     await pool.query(adminBotMigration);
@@ -66,6 +75,8 @@ test("authorization, expiration, rereads, and atomic consumption", { skip: !data
     await pool.query(adminClaimMigration);
     await pool.query(readStatusAndEarningsMigration);
     await pool.query(botStartMigration);
+    await pool.query(welcomeStarMigration);
+    await pool.query(whisperStarsMigration);
 
     assert.equal(await claimBotStartNotification(pool, "606"), true);
     assert.equal(await claimBotStartNotification(pool, "606"), false);
@@ -73,6 +84,22 @@ test("authorization, expiration, rereads, and atomic consumption", { skip: !data
     assert.equal(await claimBotStartNotification(pool, "606"), true);
     await markBotStartNotificationSent(pool, "606");
     assert.equal(await claimBotStartNotification(pool, "606"), false);
+    assert.deepEqual(await initializeUserOnStart(pool, "606", "starter606"), {
+      awarded: true,
+      starsBalance: 1,
+    });
+    assert.deepEqual(await initializeUserOnStart(pool, "606", "starter606"), {
+      awarded: false,
+      starsBalance: 1,
+    });
+    assert.equal((await getEarnStatus(pool, "606")).stars, 1);
+    await pool.query(
+      "UPDATE registrations SET enrolled_at = clock_timestamp() - INTERVAL '8 days', whispers_sent = 10 WHERE telegram_user_id = $1",
+      ["606"],
+    );
+    assert.deepEqual(await creditEligibleStars(pool, "606"), [
+      { userId: "606", starsAdded: 1, starsBalance: 2 },
+    ]);
 
     const firstReceipt = await pool.query(
       `INSERT INTO processed_updates (update_id)

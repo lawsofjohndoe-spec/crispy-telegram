@@ -21,7 +21,9 @@ async function main(): Promise<void> {
       { command: "start", description: "Welcome to iPsstRobot" },
       { command: "help", description: "How to use iPsstRobot" },
       { command: "register", description: "Register your Telegram account" },
-      { command: "earn", description: "See how stars work" },
+      { command: "earn", description: "Learn how to earn stars" },
+      { command: "balance", description: "Check your star balance" },
+      { command: "withdraw", description: "Check star withdrawal requirements" },
       { command: "privacy", description: "Read about your privacy" },
     ]);
     const cleanupTimer = startCleanupWorker(pool, bot, adminBot);

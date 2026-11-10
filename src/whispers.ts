@@ -53,6 +53,65 @@ export interface CreditedStars {
   starsBalance: number;
 }
 
+export interface StartStarAward {
+  awarded: boolean;
+  starsBalance: number;
+}
+
+export async function initializeUserOnStart(
+  pool: Pool,
+  telegramUserId: string,
+  username: string | null,
+): Promise<StartStarAward> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (username) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext(lower($1)))", [username]);
+      await client.query(
+        `UPDATE registrations
+         SET username = NULL, updated_at = clock_timestamp()
+         WHERE lower(username) = lower($1) AND telegram_user_id <> $2`,
+        [username, telegramUserId],
+      );
+    }
+    await client.query(
+      `INSERT INTO bot_starts (telegram_user_id)
+       VALUES ($1)
+       ON CONFLICT (telegram_user_id) DO NOTHING`,
+      [telegramUserId],
+    );
+    const award = await client.query(
+      `UPDATE bot_starts
+       SET welcome_star_awarded_at = clock_timestamp()
+       WHERE telegram_user_id = $1 AND welcome_star_awarded_at IS NULL
+       RETURNING telegram_user_id`,
+      [telegramUserId],
+    );
+    const registration = await client.query<{ stars: string }>(
+      `INSERT INTO registrations (telegram_user_id, username, updated_at, enrolled_at, stars)
+       VALUES ($1, $2, clock_timestamp(), clock_timestamp(), CASE WHEN $3 THEN 1 ELSE 0 END)
+       ON CONFLICT (telegram_user_id) DO UPDATE
+       SET username = EXCLUDED.username,
+           updated_at = clock_timestamp(),
+           enrolled_at = COALESCE(registrations.enrolled_at, clock_timestamp()),
+           stars = registrations.stars + CASE WHEN $3 THEN 1 ELSE 0 END
+       RETURNING stars::text`,
+      [telegramUserId, username, award.rowCount === 1],
+    );
+    await client.query("COMMIT");
+    return {
+      awarded: award.rowCount === 1,
+      starsBalance: Number(registration.rows[0]!.stars),
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function claimBotStartNotification(
   pool: Pool,
   telegramUserId: string,
@@ -588,21 +647,22 @@ export async function creditEligibleStars(
     stars_balance: string;
   }>(
     `WITH due AS (
-       SELECT telegram_user_id, stars,
+       SELECT telegram_user_id, stars, whisper_stars,
               (whispers_sent / 10) AS target_stars
        FROM registrations
        WHERE enrolled_at <= clock_timestamp() - INTERVAL '7 days'
-         AND stars < (whispers_sent / 10)
+         AND whisper_stars < (whispers_sent / 10)
          AND ($1::text IS NULL OR telegram_user_id = $1)
        FOR UPDATE SKIP LOCKED
      )
      UPDATE registrations AS r
-     SET stars = due.target_stars
+     SET stars = r.stars + (due.target_stars - due.whisper_stars),
+         whisper_stars = due.target_stars
      FROM due
      WHERE r.telegram_user_id = due.telegram_user_id
-       AND r.stars < due.target_stars
+       AND r.whisper_stars < due.target_stars
      RETURNING r.telegram_user_id::text AS user_id,
-               (r.stars - due.stars)::text AS stars_added,
+               (r.whisper_stars - due.whisper_stars)::text AS stars_added,
                r.stars::text AS stars_balance`,
     [userId ?? null],
   );

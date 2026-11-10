@@ -17,6 +17,7 @@ import {
   getAdminStatus,
   getWhisperRevealFailure,
   getWhisperDraft,
+  initializeUserOnStart,
   recordAdminCopy,
   releaseAdminCopyClaim,
   registerUser,
@@ -39,20 +40,20 @@ const PRIVATE_START_TEXT = [
   "No one else can see what you whisper except the intented person.",
   "Your secret is safe. ",
   "",
-  "Use /help to learn more, /register to set up your account, or /earn to see how stars work.",
+  "Use /help to learn more, /earn to learn how to earn stars, or /balance to check your balance.",
 ].join("\n");
 
 const HELP_TEXT = [
   "📖 <b>How to use iPsstRobot</b>",
   "",
-  "1. Start this bot and register with /register.",
+  "1. Start this bot to receive your welcome star and enroll for earnings.",
   "2. In a Telegram chat, type:",
   "<code>@iPsstRobot @username your secret message</code>",
   "3. Select the whisper result to post the card.",
   "4. The recipient taps the card and opens the bot to read the whisper privately.",
   "🔒 Only the intended recipient can read the whisper. It disappears after being read.",
-  "You can now start earning stars. You earn 1 star per 10 whispers sent with our BOT.",
-  "Try /earn to learn about stars or /privacy to see how whisper data is handled.",
+  "You earn 1 star for every 10 whispers you post after one week.",
+  "Use /earn for earning details, /balance to check your stars, or /privacy to learn how whisper data is handled.",
 ].join("\n");
 
 const REGISTER_TEXT = [
@@ -64,16 +65,14 @@ const REGISTER_TEXT = [
   "The intended person can only see it.",
 ].join("\n");
 
-const EARN_TEXT = (whispersTowardNextStar: number, starsBalance: number): string =>
-  [
+const EARN_TEXT = [
     "⭐ <b>Earn stars</b>",
     "",
-    "Use iPsstRobot for <b>one week</b> to become eligible for stars. Once eligible, you’ll automatically receive <b>1 star for every 10 whispers you send</b>.",
+    "You receive <b>1 star</b> the first time you start the bot.",
     "",
-    `Your progress: <b>${whispersTowardNextStar}/10 whispers</b>`,
-    `Stars earned: <b>${starsBalance}</b>`,
+    "After you start, post whispers with iPsstRobot. Once you’ve been enrolled for <b>one week</b>, you’ll automatically earn <b>1 star for every 10 whispers</b> you post.",
     "",
-    "Keep whispering to earn your next star!",
+    "Use /balance to check your stars. Use /withdraw &lt;amount&gt; to see withdrawal requirements (minimum 50 stars).",
   ].join("\n");
 
 const PRIVACY_TEXT = [
@@ -254,6 +253,11 @@ export function createBot(
       return;
     }
     const senderId = String(sender.id);
+    const startAward = await initializeUserOnStart(
+      pool,
+      senderId,
+      sender.username?.toLowerCase() ?? null,
+    );
     if (await claimBotStartNotification(pool, senderId)) {
       const displayName = sender.username
         ? `@${sender.username}`
@@ -283,6 +287,11 @@ export function createBot(
           description: errorDescription(error),
         });
       }
+    }
+    if (startAward.awarded) {
+      await ctx.reply(
+        `🎉 Congratulations! You earned 1 star for starting the bot. Your balance is ${startAward.starsBalance} ⭐. Keep using iPsstRobot to earn more!`,
+      );
     }
     const payload = ctx.match.trim();
     if (payload.startsWith("wh_")) {
@@ -455,27 +464,75 @@ export function createBot(
       await ctx.reply("Please run /earn in a private chat with this bot.");
       return;
     }
+    await ctx.reply(EARN_TEXT, { parse_mode: "HTML" });
+  });
+
+  bot.command("balance", async (ctx) => {
+    if (ctx.chat.type !== "private") {
+      await ctx.reply("Please run /balance in a private chat with this bot.");
+      return;
+    }
     const sender = ctx.from;
     if (!sender) {
-      await ctx.reply("Please open this bot in a private chat to check your stars.");
+      await ctx.reply("Please open this bot in a private chat to check your balance.");
       return;
     }
     try {
       const userId = String(sender.id);
       await creditEligibleStars(pool, userId);
       const status = await getEarnStatus(pool, userId);
-      await ctx.reply(
-        EARN_TEXT(status.whispersSent % 10, status.stars),
-        { parse_mode: "HTML" },
-      );
+      await ctx.reply(`⭐ Your balance is ${status.stars} star${status.stars === 1 ? "" : "s"}.`);
     } catch (error) {
-      console.error("Earn status lookup failed", {
+      console.error("Balance lookup failed", {
         userId: String(sender.id),
         error: errorName(error),
         errorCode: errorCode(error),
         description: errorDescription(error),
       });
-      await ctx.reply("I couldn't load your earning status right now. Please try /earn again shortly.");
+      await ctx.reply("I couldn't load your balance right now. Please try /balance again shortly.");
+    }
+  });
+
+  bot.command("withdraw", async (ctx) => {
+    if (ctx.chat.type !== "private") {
+      await ctx.reply("Please run /withdraw in a private chat with this bot.");
+      return;
+    }
+    const sender = ctx.from;
+    if (!sender) {
+      await ctx.reply("Please open this bot in a private chat to request a withdrawal.");
+      return;
+    }
+    const amountText = ctx.match.trim();
+    if (!/^\d+$/.test(amountText) || !Number.isSafeInteger(Number(amountText))) {
+      await ctx.reply("Usage: /withdraw <amount>\nMinimum withdrawal: 50 stars.");
+      return;
+    }
+    const amount = Number(amountText);
+    if (amount < 50) {
+      await ctx.reply("The minimum withdrawal is 50 stars.");
+      return;
+    }
+    try {
+      const userId = String(sender.id);
+      await creditEligibleStars(pool, userId);
+      const status = await getEarnStatus(pool, userId);
+      if (amount > status.stars) {
+        await ctx.reply(`You have ${status.stars} stars, which is not enough to withdraw ${amount}.`);
+        return;
+      }
+      await ctx.reply(
+        `You have enough stars for a ${amount}-star withdrawal (minimum 50). Withdrawals are not processed automatically yet; please contact the bot admin. No stars have been deducted.`,
+      );
+    } catch (error) {
+      console.error("Withdrawal balance check failed", {
+        userId: String(sender.id),
+        amount,
+        error: errorName(error),
+        errorCode: errorCode(error),
+        description: errorDescription(error),
+      });
+      await ctx.reply("I couldn't check your withdrawal amount right now. Please try again shortly.");
     }
   });
 
@@ -852,7 +909,7 @@ export function startCleanupWorker(
           try {
             await bot.api.sendMessage(
               Number(award.userId),
-              `⭐ You earned ${award.starsAdded} star${award.starsAdded === 1 ? "" : "s"}! Your balance is now ${award.starsBalance}. Use /earn to see your progress.`,
+              `⭐ You earned ${award.starsAdded} star${award.starsAdded === 1 ? "" : "s"}! Your balance is now ${award.starsBalance} stars. Use /balance to check your balance and /earn to learn how to earn more.`,
             );
           } catch (error) {
             console.error("Star award notification failed", {

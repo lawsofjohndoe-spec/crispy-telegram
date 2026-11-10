@@ -47,7 +47,7 @@ Keep the bot service to a single running instance for each Telegram polling toke
 2. The posted card identifies the intended username, has an **🔐 Read whisper privately** button, and includes the bot's **Earn with us** handle. It never includes the secret. Before posting, the inline result discloses that the configured admin receives a copy of the message. The read button records the inline card ID before opening the private whisper link, so a successful read can update the public card even if Telegram did not send the chosen-inline-result update.
 3. The intended recipient taps the card while signed into the Telegram account with the exact username addressed by the sender. The bot verifies the username, binds the account's Telegram user ID, sends the admin copy, and privately delivers the whisper. The public card then changes to `@username read the whisper`, and the secret is removed from active whisper storage.
 
-Use `/help` for instructions, `/register` to register, `/earn` to see star progress, and `/privacy` for privacy details. The configured admin is notified once when each Telegram account first starts the bot. `/forgetme` and `/admin` remain available but are not listed in the public command menu.
+Use `/help` for instructions, `/earn` to learn how stars are earned, `/balance` to check your stars, `/withdraw <amount>` to check withdrawal requirements, and `/privacy` for privacy details. The first `/start` awards one welcome star and enrolls the account for earnings. The configured admin is notified once when each Telegram account first starts the bot. `/forgetme` and `/admin` remain available but are not listed in the public command menu.
 
 ## Telegram limitations and recipient matching
 
@@ -59,7 +59,7 @@ The public card reveals who read a whisper, but only the intended recipient can 
 
 ## Earning stars
 
-Run `/register` and tap **Register me**. After one week, the bot automatically credits 1 star for every 10 whispers you post; `/earn` shows your balance and progress. Only selected, posted whispers count. Star credits are processed by the bot's periodic worker and announced privately when possible. After code changes, rebuild and restart the bot (`npm run build`, then `npm start`) so the updated command handler and database migrations are loaded.
+The first time you start the bot, you receive one welcome star and are enrolled automatically. After one week, the bot automatically credits 1 star for every 10 whispers you post. Only selected, posted whispers count. `/earn` explains the earning rules, `/balance` shows your current star balance, and `/withdraw <amount>` checks the minimum of 50 stars and your available balance. Withdrawals are not automatically processed; contact the bot admin to arrange one. Star credits are processed by the bot's periodic worker and announced privately when possible. After code changes, rebuild and restart the bot (`npm run build`, then `npm start`) so the updated command handler and database migrations are loaded.
 
 ## Editing user-facing text
 
