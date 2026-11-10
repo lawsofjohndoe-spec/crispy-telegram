@@ -66,13 +66,13 @@ const REGISTER_TEXT = [
 ].join("\n");
 
 const EARN_TEXT = [
-    "⭐ <b>Earn stars</b>",
+    "⭐ Earn stars with iPsstRobot",
     "",
-    "You receive <b>1 star</b> the first time you start the bot.",
+    "You receive 1 star the first time you start the bot.",
     "",
-    "After you start, post whispers with iPsstRobot. Once you’ve been enrolled for <b>one week</b>, you’ll automatically earn <b>1 star for every 10 whispers</b> you post.",
+    "After you start, post whispers with iPsstRobot. Once you’ve been enrolled for one week, you’ll automatically earn 1 star for every 10 whispers you post.",
     "",
-    "Use /balance to check your stars. Use /withdraw &lt;amount&gt; to see withdrawal requirements (minimum 50 stars).",
+    "Use /balance to check your stars. Use /withdraw <amount> to check withdrawal requirements (minimum 50 stars).",
   ].join("\n");
 
 const PRIVACY_TEXT = [
@@ -139,8 +139,11 @@ function errorCode(error: unknown): string | number | undefined {
   if (typeof error !== "object" || error === null) {
     return undefined;
   }
-  if ("error_code" in error) {
-    const code = error.error_code;
+  for (const key of ["error_code", "code"]) {
+    if (!(key in error)) {
+      continue;
+    }
+    const code = error[key as keyof typeof error];
     if (typeof code === "string" || typeof code === "number") {
       return code;
     }
@@ -464,7 +467,7 @@ export function createBot(
       await ctx.reply("Please run /earn in a private chat with this bot.");
       return;
     }
-    await ctx.reply(EARN_TEXT, { parse_mode: "HTML" });
+    await ctx.reply(EARN_TEXT);
   });
 
   bot.command("balance", async (ctx) => {
@@ -645,7 +648,8 @@ export function createBot(
 
   bot.on("callback_query:data", async (ctx) => {
     if (ctx.callbackQuery.data === "register_me") {
-      if (ctx.callbackQuery.message?.chat.type !== "private") {
+      const message = ctx.callbackQuery.message;
+      if (!message || message.chat.type !== "private") {
         await ctx.answerCallbackQuery({
           text: "Open iPsstRobot in a private chat to register.",
           show_alert: true,
@@ -653,13 +657,47 @@ export function createBot(
         return;
       }
       const sender = ctx.callbackQuery.from;
-      await registerUser(
-        pool,
-        String(sender.id),
-        sender.username?.toLowerCase() ?? null,
-        true,
-      );
-      await ctx.answerCallbackQuery({ text: "Your Telegram account is registered." });
+      try {
+        await registerUser(
+          pool,
+          String(sender.id),
+          sender.username?.toLowerCase() ?? null,
+          true,
+        );
+      } catch (error) {
+        console.error("User registration failed", {
+          userId: String(sender.id),
+          error: errorName(error),
+          errorCode: errorCode(error),
+        });
+        await ctx.answerCallbackQuery({
+          text: "Registration failed. Please try again later.",
+          show_alert: true,
+        });
+        return;
+      }
+
+      const confirmation = [
+        "✅ <b>You’re registered!</b>",
+        "",
+        "You’re enrolled to earn stars. You earn 1 star for every 10 whispers you post after one week.",
+        "",
+        "Use /balance to check your balance and /earn for the full earning details.",
+      ].join("\n");
+      await ctx.answerCallbackQuery({ text: "Registered! See the confirmation in this chat." });
+      try {
+        await ctx.api.editMessageText(message.chat.id, message.message_id, confirmation, {
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [] },
+        });
+      } catch (error) {
+        console.error("Registration confirmation message edit failed", {
+          userId: String(sender.id),
+          error: errorName(error),
+          errorCode: errorCode(error),
+        });
+        await ctx.api.sendMessage(sender.id, confirmation, { parse_mode: "HTML" });
+      }
       return;
     }
     const match = ctx.callbackQuery.data.match(/^read_([A-Za-z0-9_-]{43})$/);
