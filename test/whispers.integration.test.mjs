@@ -12,12 +12,14 @@ import {
   consumeWhisper,
   createWhisper,
   getEarnStatus,
+  getRecentWhisperRecipients,
   getWhisperDraft,
   getWhisperRevealFailure,
   initializeUserOnStart,
   markBotStartNotificationSent,
   recordAdminCopy,
   registerUser,
+  rememberWhisperRecipient,
   releaseBotStartNotification,
   saveInlineMessageIdByToken,
 } from "../dist/whispers.js";
@@ -68,6 +70,10 @@ test("authorization, expiration, rereads, and atomic consumption", { skip: !data
       new URL("../migrations/009_track_whisper_stars.sql", import.meta.url),
       "utf8",
     );
+    const recentRecipientsMigration = await readFile(
+      new URL("../migrations/010_recent_whisper_recipients.sql", import.meta.url),
+      "utf8",
+    );
     await pool.query(initialMigration);
     await pool.query(recipientMigration);
     await pool.query(adminBotMigration);
@@ -77,6 +83,17 @@ test("authorization, expiration, rereads, and atomic consumption", { skip: !data
     await pool.query(botStartMigration);
     await pool.query(welcomeStarMigration);
     await pool.query(whisperStarsMigration);
+    await pool.query(recentRecipientsMigration);
+
+    for (let recipient = 1; recipient <= 11; recipient += 1) {
+      await rememberWhisperRecipient(pool, "606", `recipient${recipient}`);
+    }
+    const recentRecipients = await getRecentWhisperRecipients(pool, "606");
+    assert.equal(recentRecipients.length, 10);
+    assert.equal(recentRecipients.includes("recipient1"), false);
+    assert.equal(recentRecipients[0], "recipient11");
+    await rememberWhisperRecipient(pool, "606", "RECIPIENT10");
+    assert.equal((await getRecentWhisperRecipients(pool, "606"))[0], "recipient10");
 
     assert.equal(await claimBotStartNotification(pool, "606"), true);
     assert.equal(await claimBotStartNotification(pool, "606"), false);

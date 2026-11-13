@@ -220,6 +220,47 @@ export async function findRegisteredRecipient(
   return row ? { telegramUserId: row.telegram_user_id, username: row.username } : null;
 }
 
+export async function getRecentWhisperRecipients(
+  pool: Pool,
+  senderId: string,
+): Promise<string[]> {
+  const result = await pool.query<{ recipient_username: string }>(
+    `SELECT recipient_username
+     FROM recent_whisper_recipients
+     WHERE sender_id = $1
+     ORDER BY last_used_at DESC
+     LIMIT 10`,
+    [senderId],
+  );
+  return result.rows.map((row) => row.recipient_username);
+}
+
+export async function rememberWhisperRecipient(
+  pool: Pool,
+  senderId: string,
+  recipientUsername: string,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO recent_whisper_recipients (sender_id, recipient_username)
+     VALUES ($1, lower($2))
+     ON CONFLICT (sender_id, recipient_username)
+     DO UPDATE SET last_used_at = clock_timestamp()`,
+    [senderId, recipientUsername],
+  );
+  await pool.query(
+    `DELETE FROM recent_whisper_recipients
+     WHERE sender_id = $1
+       AND recipient_username IN (
+         SELECT recipient_username
+         FROM recent_whisper_recipients
+         WHERE sender_id = $1
+         ORDER BY last_used_at DESC
+         OFFSET 10
+       )`,
+    [senderId],
+  );
+}
+
 export async function createWhisper(pool: Pool, whisper: NewWhisper): Promise<StoredWhisper> {
   const result = await pool.query<{
     id: string;
@@ -712,6 +753,7 @@ export async function forgetUser(pool: Pool, telegramUserId: string): Promise<
       [telegramUserId],
     );
     await client.query("DELETE FROM registrations WHERE telegram_user_id = $1", [telegramUserId]);
+    await client.query("DELETE FROM recent_whisper_recipients WHERE sender_id = $1", [telegramUserId]);
     await client.query(
       "DELETE FROM whispers WHERE recipient_id = $1 AND read_at IS NULL",
       [telegramUserId],

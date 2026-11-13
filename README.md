@@ -43,7 +43,7 @@ Keep the bot service to a single running instance for each Telegram polling toke
 
 ## User flow
 
-1. For a short whisper, type `@YourBot @recipient your secret message` in any chat and select the result. For a longer one, privately send `/whisper @recipient your full message` to the bot, then tap **Post whisper** and choose the chat where you want to share the card. Whispers can be up to 3,500 characters.
+1. For a short whisper, type `@YourBot @recipient your secret message` in any chat and select the result. After sending to someone once, you can type a message by itself to use that most recent recipient, or open `@YourBot` with no message to choose from your saved recipients. This stays in the inline flow and does not require opening or starting a private bot chat. For a longer one, privately send `/whisper @recipient your full message` to the bot, then tap **Post whisper** and choose the chat where you want to share the card. Whispers can be up to 3,500 characters.
 2. The posted card identifies the intended username, has an **🔐 Read whisper privately** button, and includes the bot's **Earn with us** handle. It never includes the secret. Before posting, the inline result discloses that the configured admin receives a copy of the message. The read button records the inline card ID before opening the private whisper link, so a successful read can update the public card even if Telegram did not send the chosen-inline-result update.
 3. The intended recipient taps the card while signed into the Telegram account with the exact username addressed by the sender. The bot verifies the username, binds the account's Telegram user ID, sends the admin copy, and privately delivers the whisper. The public card then changes to `@username read the whisper`, and the secret is removed from active whisper storage.
 
@@ -89,7 +89,7 @@ If Telegram rejects an admin-copy send, the default `ADMIN_COPY_FAILURE_POLICY=r
 | `ADMIN_COPY_FAILURE_POLICY` | No | `rollback` (default) or `continue` |
 | `WHISPER_MAX_LENGTH` | No | Maximum secret length in UTF-16 code units, default and maximum `3500`; use `/whisper` for longer messages |
 
-Whisper creation is limited to five per sender per ten minutes; inline draft preparation is limited to 100 per sender per ten minutes, and reveal attempts are limited to ten per account per ten minutes. Inline answers use zero-second caching and are marked personal.
+Whisper posting is limited to five per sender per ten minutes, and reveal attempts are limited to ten per account per ten minutes. Typing and preparing inline drafts are not rate-limited, so fast typing does not block inline results. Inline answers use zero-second caching and are marked personal. The bot saves up to ten recent recipients for each sender; `/forgetme` also removes this list.
 
 ## Tests
 

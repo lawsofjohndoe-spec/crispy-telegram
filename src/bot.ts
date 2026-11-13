@@ -15,12 +15,14 @@ import {
   forgetUser,
   getEarnStatus,
   getAdminStatus,
+  getRecentWhisperRecipients,
   getWhisperRevealFailure,
   getWhisperDraft,
   initializeUserOnStart,
   recordAdminCopy,
   releaseAdminCopyClaim,
   registerUser,
+  rememberWhisperRecipient,
   markBotStartNotificationSent,
   releaseBotStartNotification,
   removeWhisper,
@@ -36,6 +38,8 @@ const PRIVATE_START_TEXT = [
   "",
   "<code>@iPsstRobot @username your secret message</code>",
   "",
+  "After sending your first whisper, you can type a short message to whisper to your most recent recipient. Type <code>@iPsstRobot</code> with no message to choose someone else you’ve whispered to.",
+  "",
   "Choose the result from the bot to post a whisper card. Only the intended recipient can read the message in a private chat. <b>The whisper disappears after it’s read.</b>",
   "No one else can see what you whisper except the intented person.",
   "Your secret is safe. ",
@@ -49,6 +53,7 @@ const HELP_TEXT = [
   "1. Start this bot to receive your welcome star and enroll for earnings.",
   "2. In a Telegram chat, type:",
   "<code>@iPsstRobot @username your secret message</code>",
+  "After that, type a short message to whisper to your most recent recipient, or type <code>@iPsstRobot</code> with no message to choose another recent recipient.",
   "3. Select the whisper result to post the card.",
   "4. The recipient taps the card and opens the bot to read the whisper privately.",
   "🔒 Only the intended recipient can read the whisper. It disappears after being read.",
@@ -127,6 +132,22 @@ function whisperCardResult(
       ].join("\n"),
     },
     reply_markup: new InlineKeyboard().text("🔐 Read whisper privately", `read_${token}`),
+  };
+}
+
+function recentRecipientResult(username: string) {
+  return {
+    type: "article" as const,
+    id: `recent_${username}`,
+    title: `🤫 Whisper to @${username}`,
+    description: "Use this saved recipient",
+    input_message_content: {
+      message_text: `Tap “Write to @${username}” below to compose a private whisper.`,
+    },
+    reply_markup: new InlineKeyboard().switchInlineCurrent(
+      `✍️ Write to @${username}`,
+      `@${username} `,
+    ),
   };
 }
 
@@ -556,11 +577,6 @@ export function createBot(
       );
       return;
     }
-    const allowed = await allowRateLimitedAction(pool, String(sender.id), "draft", 100, 600);
-    if (!allowed) {
-      await ctx.reply("Please wait before preparing another whisper.");
-      return;
-    }
     const token = createWhisperToken();
     const draft = await createWhisper(pool, {
       token,
@@ -755,22 +771,55 @@ export function createBot(
     }
 
     const match = input.match(/^@([A-Za-z0-9_]{5,32})\s+([\s\S]+)$/);
+    let requestedUsername = match?.[1];
+    let untrimmedSecret = match?.[2];
     if (!match) {
-      await ctx.answerInlineQuery(
-        [
-          genericResult(
-            "How to send a whisper",
-            "Use @recipient followed by your message.",
-            "To send a whisper, enter @iPsstRobot @recipient your secret message. The recipient must open the link while signed into the Telegram account with that exact current username; no prior registration is needed.",
-          ),
-        ],
-        { cache_time: 0, is_personal: true },
-      );
-      return;
+      if (input.startsWith("@")) {
+        await ctx.answerInlineQuery(
+          [
+            genericResult(
+              "Add your message",
+              "Type a space and your whisper after the recipient username.",
+              "Use @recipient followed by your message.",
+            ),
+          ],
+          { cache_time: 0, is_personal: true },
+        );
+        return;
+      }
+      const recentRecipients = await getRecentWhisperRecipients(pool, String(sender.id));
+      if (input.length === 0) {
+        await ctx.answerInlineQuery(
+          recentRecipients.length > 0
+            ? recentRecipients.map(recentRecipientResult)
+            : [
+                genericResult(
+                  "Send a whisper",
+                  "Type @recipient followed by your message.",
+                  "To send a whisper, enter @iPsstRobot @recipient your secret message. Recipients you send to are saved for next time.",
+                ),
+              ],
+          { cache_time: 0, is_personal: true },
+        );
+        return;
+      }
+      requestedUsername = recentRecipients[0];
+      untrimmedSecret = input;
+      if (!requestedUsername) {
+        await ctx.answerInlineQuery(
+          [
+            genericResult(
+              "Choose a recipient",
+              "Type @recipient followed by your message.",
+              "To send a whisper, enter @iPsstRobot @recipient your secret message. After your first whisper, you can type a message by itself to use that recipient again.",
+            ),
+          ],
+          { cache_time: 0, is_personal: true },
+        );
+        return;
+      }
     }
 
-    const requestedUsername = match[1];
-    const untrimmedSecret = match[2];
     if (!requestedUsername || untrimmedSecret === undefined) {
       await ctx.answerInlineQuery([], { cache_time: 0, is_personal: true });
       return;
@@ -785,15 +834,6 @@ export function createBot(
             `Whispers must contain 1 to ${config.whisperMaxLength} characters.`,
           ),
         ],
-        { cache_time: 0, is_personal: true },
-      );
-      return;
-    }
-
-    const allowed = await allowRateLimitedAction(pool, String(sender.id), "draft", 100, 600);
-    if (!allowed) {
-      await ctx.answerInlineQuery(
-        [genericResult("Please slow down", "Try again later.", "Please wait before preparing another whisper.")],
         { cache_time: 0, is_personal: true },
       );
       return;
@@ -903,6 +943,17 @@ export function createBot(
           });
         }
       }
+      return;
+    }
+
+    try {
+      await rememberWhisperRecipient(pool, selected.senderId, selected.recipientUsername);
+    } catch (error) {
+      console.error("Could not save recent whisper recipient", {
+        senderId: selected.senderId,
+        error: errorName(error),
+        errorCode: errorCode(error),
+      });
     }
   });
 
